@@ -1,0 +1,77 @@
+@import 'tailwindcss';
+@config '../tailwind.config.js';
+
+@layer base {
+  * {
+    @apply border-outline-variant/30;
+  }
+}
+
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+/* dvh viewport-height utilities with 100vh fallback for browsers that don't support dvh
+   (iOS ≤ 15.3). Two declarations for the same property in plain CSS resolve correctly:
+   the second one wins when supported, the first acts as the fallback. */
+.full-viewport {
+  height: 100vh;
+  /* stylelint-disable-next-line unit-no-unknown */
+  height: 100dvh;
+  max-height: 100vh;
+  /* stylelint-disable-next-line unit-no-unknown */
+  max-height: 100dvh;
+  overscroll-behavior: none;
+}
+
+.full-viewport-min {
+  min-height: 100vh;
+  /* stylelint-disable-next-line unit-no-unknown */
+  min-height: 100dvh;
+}
+
+.glass-panel {
+  background: rgba(24, 24, 38, 0.7);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+}
+
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(189, 157, 255, 0.2);
+  border-radius: 10px;
+}
+
+/* Vertical clip swipe stack (mobile QA player) */
+.qa-video-frame {
+  touch-action: pan-x;
+}
+
+.qa-swipe-hint,
+.qa-swipe-arrows {
+  animation: qa-swipe-hint-fade 3.2s ease-out forwards;
+}
+
+@keyframes qa-swipe-hint-fade {
+  0%,
+  65% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
