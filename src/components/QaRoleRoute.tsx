@@ -27,7 +27,7 @@ export default function QaRoleRoute() {
           setError('Your account is not active in the QA team directory.')
           return
         }
-        if (row.role !== 'qa') {
+        if (row.role !== 'reels_qa') {
           setAllowed(false)
           setError(null)
           return
