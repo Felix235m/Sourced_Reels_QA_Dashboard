@@ -23,7 +23,7 @@ export default function GameFilterDropdown({ selectedGame, availableGames, onGam
     }
   }, [open])
 
-  const label = selectedGame ?? 'All games'
+  const label = selectedGame ?? 'Games'
 
   return (
     <div ref={ref} className="relative">

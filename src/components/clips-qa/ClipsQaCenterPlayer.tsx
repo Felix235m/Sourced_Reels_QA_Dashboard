@@ -52,6 +52,9 @@ export default function ClipsQaCenterPlayer({
     durationRef.current = duration
   }, [duration])
   const [playing, setPlaying] = useState(false)
+  // True while the current clip is still buffering — drives a spinner overlay so the
+  // frame never shows an ambiguous dead-black gap while a cold clip loads.
+  const [buffering, setBuffering] = useState(true)
 
   useEffect(() => {
     const el = frameRef.current
@@ -72,6 +75,9 @@ export default function ClipsQaCenterPlayer({
     if (!v || !videoUrl || !clipKey) return
     v.playbackRate = 1
     v.currentTime = 0
+    // Reset the buffering overlay on each clip change; if the clip is already warmed
+    // (preloaded into cache), readyState is >= 2 at mount so we skip the spinner flash.
+    setBuffering(v.readyState < 2)
     const tryPlay = () => {
       void v.play().catch(() => {})
     }
@@ -170,8 +176,14 @@ export default function ClipsQaCenterPlayer({
           className="relative z-0 h-full w-full object-contain"
           playsInline
           muted={muted}
+          preload="auto"
           onTimeUpdate={onTimeUpdate}
           onLoadedMetadata={onLoadedMeta}
+          onWaiting={() => setBuffering(true)}
+          onStalled={() => setBuffering(true)}
+          onCanPlay={() => setBuffering(false)}
+          onPlaying={() => setBuffering(false)}
+          onLoadedData={() => setBuffering(false)}
           onPlay={onPlay}
           onPause={onPause}
           onEnded={onPause}
@@ -198,6 +210,17 @@ export default function ClipsQaCenterPlayer({
           ) : null}
         </div>
       )}
+
+      {videoUrl && buffering ? (
+        <div
+          className="pointer-events-none absolute inset-0 z-[16] flex items-center justify-center bg-black"
+          aria-hidden
+        >
+          <span className="material-symbols-outlined animate-spin text-4xl text-primary/60">
+            progress_activity
+          </span>
+        </div>
+      ) : null}
 
       {videoUrl && muted ? (
         <button

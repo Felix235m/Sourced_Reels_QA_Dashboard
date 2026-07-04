@@ -5,6 +5,7 @@ import ClipsQaCenterPlayer from '@components/clips-qa/ClipsQaCenterPlayer'
 import ClipsQaDetailsPanel from '@components/clips-qa/ClipsQaDetailsPanel'
 import ClipsQaFooterShortcuts from '@components/clips-qa/ClipsQaFooterShortcuts'
 import ClipsQaDecisionBar from '@components/clips-qa/ClipsQaDecisionBar'
+import VideoPreloader from '@components/clips-qa/VideoPreloader'
 import Toast from '@components/Toast'
 import { useAuth } from '@hooks/useAuth'
 import { useMobileLayout } from '@hooks/useMobileLayout'
@@ -281,6 +282,8 @@ export default function ClipsQaDashboard() {
             onSwipePrev={onSwipePrevClip}
             clipPositionLabel={clipPositionLabel}
           />
+
+          <VideoPreloader urls={[swipeAdjacent.next?.videoUrl, swipeAdjacent.prev?.videoUrl]} />
 
           <ClipsQaDecisionBar
             onApprove={handleApprove}
