@@ -1,5 +1,7 @@
 import GameFilterDropdown from '@components/qa/GameFilterDropdown'
 
+const DAILY_APPROVAL_TARGET = 60
+
 type Props = {
   pendingCount: number
   /** 1-based index of the clip currently shown (mobile swipe position). */
@@ -8,6 +10,8 @@ type Props = {
   selectedGame: string | null
   availableGames: string[]
   onGameChange: (game: string | null) => void
+  /** Reels approved by the signed-in reviewer so far today. */
+  approvedToday?: number
 }
 
 export default function QaHeader({
@@ -17,9 +21,11 @@ export default function QaHeader({
   selectedGame,
   availableGames,
   onGameChange,
+  approvedToday = 0,
 }: Props) {
   const clipPositionLabel =
     clipIndex != null && pendingCount > 0 ? `${clipIndex}/${pendingCount}` : String(pendingCount)
+  const leftToApprove = Math.max(DAILY_APPROVAL_TARGET - approvedToday, 0)
 
   return (
     <header className="sticky top-0 z-50 flex w-full shrink-0 items-center justify-between gap-3 border-b border-white/10 bg-surface/80 px-4 py-3 shadow-[0_0_24px_rgba(189,157,255,0.04)] backdrop-blur-xl sm:px-6">
@@ -64,6 +70,26 @@ export default function QaHeader({
         <div className="hidden flex-col items-end text-right text-xs font-label uppercase tracking-widest text-on-surface-variant lg:flex">
           <span className="font-bold text-secondary">{pendingCount} Pending</span>
           <span className="text-on-surface-variant/60">Queue</span>
+        </div>
+        <div
+          className={`flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 transition-colors sm:gap-2 sm:px-3 sm:py-1.5 ${
+            leftToApprove === 0 ? 'bg-secondary/20 text-secondary' : 'bg-secondary/10 text-secondary'
+          }`}
+          title={
+            selectedGame
+              ? `${approvedToday} of ${DAILY_APPROVAL_TARGET} approved today for ${selectedGame}`
+              : `${approvedToday} of ${DAILY_APPROVAL_TARGET} approved today`
+          }
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>
+            {leftToApprove === 0 ? 'task_alt' : 'flag'}
+          </span>
+          <span className="text-xs font-bold tabular-nums sm:text-sm">
+            {leftToApprove === 0 ? 'Done' : leftToApprove}
+          </span>
+          <span className="hidden font-label text-[10px] uppercase tracking-widest sm:inline">
+            {leftToApprove === 0 ? 'Target met' : 'left to approve'}
+          </span>
         </div>
       </div>
     </header>

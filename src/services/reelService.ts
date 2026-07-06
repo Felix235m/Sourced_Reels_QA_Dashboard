@@ -52,6 +52,26 @@ export async function fetchReelsQueue(game?: string | null): Promise<Reel[]> {
   return (data ?? []) as unknown as Reel[]
 }
 
+/** Count of reels the signed-in reviewer has approved so far today (UTC calendar day), scoped to a game. */
+export async function getApprovedTodayCount(game: string): Promise<number> {
+  const { supabase, user } = await getUser()
+  const now = new Date()
+  const startOfDayUtc = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  ).toISOString()
+
+  const { count, error } = await supabase
+    .from('reels')
+    .select('reel_id', { count: 'exact', head: true })
+    .eq('assigned_to', user.id)
+    .eq('game', game)
+    .eq('is_approved', true)
+    .gte('reviewed_at', startOfDayUtc)
+
+  if (error) throw new Error(error.message)
+  return count ?? 0
+}
+
 /** Distinct games in the signed-in reviewer's validated reels. */
 export async function fetchReelGames(): Promise<string[]> {
   const { supabase, user } = await getUser()

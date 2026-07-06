@@ -10,7 +10,12 @@ import Toast from '@components/Toast'
 import { useAuth } from '@hooks/useAuth'
 import { useMobileLayout } from '@hooks/useMobileLayout'
 import type { ClipSwipePreview } from '@hooks/useClipSwipeNavigation'
-import { fetchReelsQueue, fetchReelGames, submitReelDecision } from '@services/reelService'
+import {
+  fetchReelsQueue,
+  fetchReelGames,
+  submitReelDecision,
+  getApprovedTodayCount,
+} from '@services/reelService'
 import type { Reel } from '@/types/reel'
 
 function toSwipePreview(reel: Reel): ClipSwipePreview {
@@ -36,6 +41,7 @@ export default function ClipsQaDashboard() {
   const [queueDrawerOpen, setQueueDrawerOpen] = useState(false)
   const [selectedGame, setSelectedGame] = useState<string | null>(null)
   const [availableGames, setAvailableGames] = useState<string[]>([])
+  const [approvedToday, setApprovedToday] = useState(0)
   const isMobileLayout = useMobileLayout()
 
   const loadQueue = useCallback(async (game: string | null = null) => {
@@ -56,14 +62,26 @@ export default function ClipsQaDashboard() {
   }, [])
 
   useEffect(() => {
-    void loadQueue(null)
-    void fetchReelGames().then(setAvailableGames).catch(() => {})
+    void fetchReelGames().then((games) => {
+      setAvailableGames(games)
+      const defaultGame = games[0] ?? null
+      setSelectedGame(defaultGame)
+      void loadQueue(defaultGame)
+      if (defaultGame) {
+        void getApprovedTodayCount(defaultGame).then(setApprovedToday).catch(() => {})
+      }
+    }).catch(() => {})
   }, [loadQueue])
 
   const handleGameChange = useCallback(
     (game: string | null) => {
       setSelectedGame(game)
       void loadQueue(game)
+      if (game) {
+        void getApprovedTodayCount(game).then(setApprovedToday).catch(() => {})
+      } else {
+        setApprovedToday(0)
+      }
     },
     [loadQueue],
   )
@@ -156,6 +174,7 @@ export default function ClipsQaDashboard() {
       const nextId = rest[idx]?.reel_id ?? rest[idx - 1]?.reel_id ?? rest[0]?.reel_id ?? null
       setReels(rest)
       setSelectedId(nextId)
+      setApprovedToday((n) => n + 1)
     } catch (e) {
       setActionError(e instanceof Error ? e.message : 'Approve failed')
     } finally {
@@ -239,6 +258,7 @@ export default function ClipsQaDashboard() {
         selectedGame={selectedGame}
         availableGames={availableGames}
         onGameChange={handleGameChange}
+        approvedToday={approvedToday}
       />
 
       {error ? (
