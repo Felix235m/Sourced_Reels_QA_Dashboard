@@ -98,6 +98,10 @@ export default function ClipsQaCenterPlayer({
     if (!v) return
     setProgress(v.currentTime)
     setDuration(v.duration || 0)
+    // currentTime only advances during real playback, so this is a reliable signal
+    // that the clip is rendering even if a stray waiting/stalled event left the
+    // buffering overlay stuck on.
+    setBuffering(false)
   }, [videoRef])
 
   const onLoadedMeta = useCallback(() => {
@@ -213,7 +217,7 @@ export default function ClipsQaCenterPlayer({
 
       {videoUrl && buffering ? (
         <div
-          className="pointer-events-none absolute inset-0 z-[16] flex items-center justify-center bg-black"
+          className="pointer-events-none absolute inset-0 z-[16] flex items-center justify-center bg-black/60"
           aria-hidden
         >
           <span className="material-symbols-outlined animate-spin text-4xl text-primary/60">
