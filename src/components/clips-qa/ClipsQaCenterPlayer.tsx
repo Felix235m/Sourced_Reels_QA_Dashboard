@@ -54,7 +54,15 @@ export default function ClipsQaCenterPlayer({
   const [playing, setPlaying] = useState(false)
   // True while the current clip is still buffering — drives a spinner overlay so the
   // frame never shows an ambiguous dead-black gap while a cold clip loads.
-  const [buffering, setBuffering] = useState(true)
+  const [buffering, setBuffering] = useState(Boolean(videoUrl))
+  // Reset buffering synchronously during render (not in an effect) the instant clipKey
+  // changes, so the new (readyState-0) video element never paints a frame with the old
+  // clip's buffering state — e.g. a finished clip's "not buffering" carrying over.
+  const [bufferedForKey, setBufferedForKey] = useState(clipKey)
+  if (bufferedForKey !== clipKey) {
+    setBufferedForKey(clipKey)
+    setBuffering(Boolean(videoUrl))
+  }
 
   useEffect(() => {
     const el = frameRef.current
@@ -75,9 +83,6 @@ export default function ClipsQaCenterPlayer({
     if (!v || !videoUrl || !clipKey) return
     v.playbackRate = 1
     v.currentTime = 0
-    // Reset the buffering overlay on each clip change; if the clip is already warmed
-    // (preloaded into cache), readyState is >= 2 at mount so we skip the spinner flash.
-    setBuffering(v.readyState < 2)
     const tryPlay = () => {
       void v.play().catch(() => {})
     }

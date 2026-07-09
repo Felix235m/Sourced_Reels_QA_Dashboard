@@ -2,11 +2,13 @@ import { Outlet } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { useAuth } from '@hooks/useAuth'
 import { fetchMyTeamRow } from '@services/teamService'
+import type { QaTeamUser } from '@/types/team'
 
 export default function QaRoleRoute() {
   const { user, signOut } = useAuth()
   const [allowed, setAllowed] = useState<boolean | undefined>(undefined)
   const [error, setError] = useState<string | null>(null)
+  const [teamRow, setTeamRow] = useState<QaTeamUser | null>(null)
 
   useEffect(() => {
     if (!user) {
@@ -27,11 +29,12 @@ export default function QaRoleRoute() {
           setError('Your account is not active in the QA team directory.')
           return
         }
-        if (row.role !== 'reels_qa') {
+        if (row.role !== 'reels_qa' && row.role !== 'qa') {
           setAllowed(false)
           setError(null)
           return
         }
+        setTeamRow(row)
         setAllowed(true)
         setError(null)
       } catch (e) {
@@ -72,5 +75,5 @@ export default function QaRoleRoute() {
     )
   }
 
-  return <Outlet />
+  return <Outlet context={teamRow} />
 }

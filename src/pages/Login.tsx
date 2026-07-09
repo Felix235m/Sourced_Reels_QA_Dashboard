@@ -39,7 +39,7 @@ export default function Login() {
       try {
         const row = await fetchMyTeamRow(user.id)
         if (cancelled) return
-        if (row?.role === 'reels_qa' && row.is_active) {
+        if ((row?.role === 'reels_qa' || row?.role === 'qa') && row.is_active) {
           navigate('/qa', { replace: true })
         } else {
           await signOut()

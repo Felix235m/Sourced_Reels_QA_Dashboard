@@ -1,4 +1,4 @@
-export type QaTeamRole = 'reels_qa' | 'qa_manager'
+export type QaTeamRole = 'reels_qa' | 'qa' | 'qa_manager'
 
 export interface QaTeamUser {
   id: string

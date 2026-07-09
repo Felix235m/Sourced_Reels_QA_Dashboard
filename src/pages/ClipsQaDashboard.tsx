@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useOutletContext } from 'react-router-dom'
 import QaHeader from '@components/qa/QaHeader'
 import ClipsQaQueueSidebar from '@components/clips-qa/ClipsQaQueueSidebar'
 import ClipsQaCenterPlayer from '@components/clips-qa/ClipsQaCenterPlayer'
@@ -17,6 +18,7 @@ import {
   getApprovedTodayCount,
 } from '@services/reelService'
 import type { Reel } from '@/types/reel'
+import type { QaTeamUser } from '@/types/team'
 
 function toSwipePreview(reel: Reel): ClipSwipePreview {
   return {
@@ -28,6 +30,8 @@ function toSwipePreview(reel: Reel): ClipSwipePreview {
 
 export default function ClipsQaDashboard() {
   const { signOut } = useAuth()
+  const teamRow = useOutletContext<QaTeamUser | null>()
+  const allAccess = teamRow?.role === 'qa'
   const videoRef = useRef<HTMLVideoElement>(null)
 
   const [reels, setReels] = useState<Reel[]>([])
@@ -44,46 +48,53 @@ export default function ClipsQaDashboard() {
   const [approvedToday, setApprovedToday] = useState(0)
   const isMobileLayout = useMobileLayout()
 
-  const loadQueue = useCallback(async (game: string | null = null) => {
-    setLoading(true)
-    setError(null)
-    try {
-      const rows = await fetchReelsQueue(game)
-      setReels(rows)
-      setSelectedId((prev) => {
-        if (prev && rows.some((r) => r.reel_id === prev)) return prev
-        return rows[0]?.reel_id ?? null
-      })
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load queue')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+  const loadQueue = useCallback(
+    async (game: string | null = null, allAccessOverride = allAccess) => {
+      setLoading(true)
+      setError(null)
+      try {
+        const rows = await fetchReelsQueue(game, allAccessOverride)
+        setReels(rows)
+        setSelectedId((prev) => {
+          if (prev && rows.some((r) => r.reel_id === prev)) return prev
+          return rows[0]?.reel_id ?? null
+        })
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Failed to load queue')
+      } finally {
+        setLoading(false)
+      }
+    },
+    [allAccess],
+  )
 
   useEffect(() => {
-    void fetchReelGames().then((games) => {
+    if (!teamRow) return
+    void fetchReelGames(allAccess).then((games) => {
       setAvailableGames(games)
       const defaultGame = games[0] ?? null
       setSelectedGame(defaultGame)
-      void loadQueue(defaultGame)
+      void loadQueue(defaultGame, allAccess)
       if (defaultGame) {
-        void getApprovedTodayCount(defaultGame).then(setApprovedToday).catch(() => {})
+        void getApprovedTodayCount(defaultGame, allAccess)
+          .then(setApprovedToday)
+          .catch(() => {})
       }
     }).catch(() => {})
-  }, [loadQueue])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teamRow, allAccess])
 
   const handleGameChange = useCallback(
     (game: string | null) => {
       setSelectedGame(game)
       void loadQueue(game)
       if (game) {
-        void getApprovedTodayCount(game).then(setApprovedToday).catch(() => {})
+        void getApprovedTodayCount(game, allAccess).then(setApprovedToday).catch(() => {})
       } else {
         setApprovedToday(0)
       }
     },
-    [loadQueue],
+    [loadQueue, allAccess],
   )
 
   useEffect(() => {
@@ -168,7 +179,7 @@ export default function ClipsQaDashboard() {
     setActionError(null)
     const id = selectedReel.reel_id
     try {
-      await submitReelDecision(id, 'approve')
+      await submitReelDecision(id, 'approve', allAccess)
       const rest = reels.filter((r) => r.reel_id !== id)
       const idx = reels.findIndex((r) => r.reel_id === id)
       const nextId = rest[idx]?.reel_id ?? rest[idx - 1]?.reel_id ?? rest[0]?.reel_id ?? null
@@ -180,7 +191,7 @@ export default function ClipsQaDashboard() {
     } finally {
       setActionBusy(false)
     }
-  }, [selectedReel, actionBusy, reels])
+  }, [selectedReel, actionBusy, reels, allAccess])
 
   const handleReject = useCallback(async () => {
     if (!selectedReel || actionBusy) return
@@ -188,7 +199,7 @@ export default function ClipsQaDashboard() {
     setActionError(null)
     const id = selectedReel.reel_id
     try {
-      await submitReelDecision(id, 'reject')
+      await submitReelDecision(id, 'reject', allAccess)
       const rest = reels.filter((r) => r.reel_id !== id)
       const idx = reels.findIndex((r) => r.reel_id === id)
       const nextId = rest[idx]?.reel_id ?? rest[idx - 1]?.reel_id ?? rest[0]?.reel_id ?? null
@@ -199,7 +210,7 @@ export default function ClipsQaDashboard() {
     } finally {
       setActionBusy(false)
     }
-  }, [selectedReel, actionBusy, reels])
+  }, [selectedReel, actionBusy, reels, allAccess])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

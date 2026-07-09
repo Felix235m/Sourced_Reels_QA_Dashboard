@@ -1,33 +1,46 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Reel } from '@/types/reel'
 import GameFilterDropdown from '@components/qa/GameFilterDropdown'
+import { useInView } from '@hooks/useInView'
 
+function ThumbnailPlaceholder({ reelId }: { reelId: string }) {
+  return (
+    <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-surface-container-highest">
+      <span
+        className="material-symbols-outlined text-2xl text-on-surface-variant/40"
+        style={{ fontVariationSettings: "'FILL' 0" }}
+      >
+        video_file
+      </span>
+      <span className="text-[9px] text-on-surface-variant/40">{reelId.slice(0, 8)}</span>
+    </div>
+  )
+}
+
+/**
+ * Mounts the native <video> only once the row is scrolled near the viewport.
+ * With a large all-access queue, mounting every row's video up front would fire
+ * hundreds of concurrent metadata requests that compete with the main player.
+ */
 function VideoThumbnail({ src, reelId }: { src: string; reelId: string }) {
   const [errored, setErrored] = useState(false)
-
-  if (errored) {
-    return (
-      <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-surface-container-highest">
-        <span
-          className="material-symbols-outlined text-2xl text-on-surface-variant/40"
-          style={{ fontVariationSettings: "'FILL' 0" }}
-        >
-          video_file
-        </span>
-        <span className="text-[9px] text-on-surface-variant/40">{reelId.slice(0, 8)}</span>
-      </div>
-    )
-  }
+  const [wrapperRef, inView] = useInView<HTMLDivElement>()
 
   return (
-    <video
-      src={src}
-      className="h-full w-full object-cover opacity-90"
-      muted
-      playsInline
-      preload="metadata"
-      onError={() => setErrored(true)}
-    />
+    <div ref={wrapperRef} className="h-full w-full">
+      {errored || !inView ? (
+        <ThumbnailPlaceholder reelId={reelId} />
+      ) : (
+        <video
+          src={src}
+          className="h-full w-full object-cover opacity-90"
+          muted
+          playsInline
+          preload="metadata"
+          onError={() => setErrored(true)}
+        />
+      )}
+    </div>
   )
 }
 
@@ -130,17 +143,7 @@ function SidebarContent({
                   {reel.supabase_file_url ? (
                     <VideoThumbnail src={reel.supabase_file_url} reelId={reel.reel_id} />
                   ) : (
-                    <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-surface-container-highest">
-                      <span
-                        className="material-symbols-outlined text-2xl text-on-surface-variant/40"
-                        style={{ fontVariationSettings: "'FILL' 0" }}
-                      >
-                        video_file
-                      </span>
-                      <span className="text-[9px] text-on-surface-variant/40">
-                        {reel.reel_id.slice(0, 8)}
-                      </span>
-                    </div>
+                    <ThumbnailPlaceholder reelId={reel.reel_id} />
                   )}
                   {active ? (
                     <div className="absolute inset-0 flex items-center justify-center bg-black/30">
