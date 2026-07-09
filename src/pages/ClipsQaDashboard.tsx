@@ -32,6 +32,9 @@ export default function ClipsQaDashboard() {
   const { signOut } = useAuth()
   const teamRow = useOutletContext<QaTeamUser | null>()
   const allAccess = teamRow?.role === 'qa'
+  // The all-access qa role is a supervisor: it can view every reviewer's queue
+  // and the per-game counts, but must not approve/reject reels.
+  const readOnly = allAccess
   const videoRef = useRef<HTMLVideoElement>(null)
 
   const [reels, setReels] = useState<Reel[]>([])
@@ -174,7 +177,7 @@ export default function ClipsQaDashboard() {
   }, [])
 
   const handleApprove = useCallback(async () => {
-    if (!selectedReel || actionBusy) return
+    if (!selectedReel || actionBusy || readOnly) return
     setActionBusy(true)
     setActionError(null)
     const id = selectedReel.reel_id
@@ -191,10 +194,10 @@ export default function ClipsQaDashboard() {
     } finally {
       setActionBusy(false)
     }
-  }, [selectedReel, actionBusy, reels, allAccess])
+  }, [selectedReel, actionBusy, reels, allAccess, readOnly])
 
   const handleReject = useCallback(async () => {
-    if (!selectedReel || actionBusy) return
+    if (!selectedReel || actionBusy || readOnly) return
     setActionBusy(true)
     setActionError(null)
     const id = selectedReel.reel_id
@@ -210,7 +213,7 @@ export default function ClipsQaDashboard() {
     } finally {
       setActionBusy(false)
     }
-  }, [selectedReel, actionBusy, reels, allAccess])
+  }, [selectedReel, actionBusy, reels, allAccess, readOnly])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -225,12 +228,12 @@ export default function ClipsQaDashboard() {
         togglePlay()
         return
       }
-      if (e.key === 'a' || e.key === 'A') {
+      if (!readOnly && (e.key === 'a' || e.key === 'A')) {
         e.preventDefault()
         void handleApprove()
         return
       }
-      if (e.key === 'r' || e.key === 'R') {
+      if (!readOnly && (e.key === 'r' || e.key === 'R')) {
         e.preventDefault()
         void handleReject()
         return
@@ -248,7 +251,7 @@ export default function ClipsQaDashboard() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [togglePlay, handleApprove, handleReject, goToAdjacentReel])
+  }, [togglePlay, handleApprove, handleReject, goToAdjacentReel, readOnly])
 
   const handleLogout = useCallback(async () => {
     try {
@@ -316,17 +319,23 @@ export default function ClipsQaDashboard() {
 
           <VideoPreloader urls={[swipeAdjacent.next?.videoUrl, swipeAdjacent.prev?.videoUrl]} />
 
-          <ClipsQaDecisionBar
-            onApprove={handleApprove}
-            onReject={handleReject}
-            disabled={decisionDisabled}
-          />
+          {readOnly ? (
+            <div className="shrink-0 border-t border-white/10 bg-[#0d0d18]/95 px-3 py-3 text-center text-xs font-label uppercase tracking-widest text-on-surface-variant">
+              View-only · reviewing is disabled for this role
+            </div>
+          ) : (
+            <ClipsQaDecisionBar
+              onApprove={handleApprove}
+              onReject={handleReject}
+              disabled={decisionDisabled}
+            />
+          )}
         </div>
 
         <ClipsQaDetailsPanel reel={selectedReel} durationSec={durationSec} />
       </main>
 
-      <ClipsQaFooterShortcuts />
+      <ClipsQaFooterShortcuts readOnly={readOnly} />
 
       <Toast message={actionError} onDismiss={() => setActionError(null)} />
     </div>
