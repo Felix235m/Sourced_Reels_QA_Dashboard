@@ -59,9 +59,14 @@ export default function ClipsQaCenterPlayer({
   // changes, so the new (readyState-0) video element never paints a frame with the old
   // clip's buffering state — e.g. a finished clip's "not buffering" carrying over.
   const [bufferedForKey, setBufferedForKey] = useState(clipKey)
+  // True when the browser loaded the file but can't decode its video track — e.g. an
+  // HEVC/H.265 TikTok download on a PC without HEVC support, which plays audio while
+  // painting a black frame. Detected via onError or 0×0 dimensions after metadata.
+  const [videoUnsupported, setVideoUnsupported] = useState(false)
   if (bufferedForKey !== clipKey) {
     setBufferedForKey(clipKey)
     setBuffering(Boolean(videoUrl))
+    setVideoUnsupported(false)
   }
 
   useEffect(() => {
@@ -115,6 +120,13 @@ export default function ClipsQaCenterPlayer({
     const d = v.duration
     onVideoMeta(Number.isFinite(d) ? d : null)
     setDuration(Number.isFinite(d) ? d : 0)
+    // Metadata loaded but the video track has no dimensions → the browser can't
+    // decode it (typically HEVC on a machine without HEVC support). Audio may still
+    // play, so surface a message instead of a silent black frame.
+    if (v.videoWidth === 0 && v.videoHeight === 0) {
+      setVideoUnsupported(true)
+      setBuffering(false)
+    }
   }, [videoRef, onVideoMeta])
 
   const onPlay = useCallback(() => setPlaying(true), [])
@@ -193,6 +205,10 @@ export default function ClipsQaCenterPlayer({
           onCanPlay={() => setBuffering(false)}
           onPlaying={() => setBuffering(false)}
           onLoadedData={() => setBuffering(false)}
+          onError={() => {
+            setVideoUnsupported(true)
+            setBuffering(false)
+          }}
           onPlay={onPlay}
           onPause={onPause}
           onEnded={onPause}
@@ -220,7 +236,7 @@ export default function ClipsQaCenterPlayer({
         </div>
       )}
 
-      {videoUrl && buffering ? (
+      {videoUrl && buffering && !videoUnsupported ? (
         <div
           className="pointer-events-none absolute inset-0 z-[16] flex items-center justify-center bg-black/60"
           aria-hidden
@@ -228,6 +244,32 @@ export default function ClipsQaCenterPlayer({
           <span className="material-symbols-outlined animate-spin text-4xl text-primary/60">
             progress_activity
           </span>
+        </div>
+      ) : null}
+
+      {videoUrl && videoUnsupported ? (
+        <div className="absolute inset-0 z-[19] flex flex-col items-center justify-center gap-3 bg-surface-container-lowest/95 p-6 text-center text-on-surface-variant">
+          <span
+            className="material-symbols-outlined text-3xl opacity-40"
+            style={{ fontVariationSettings: "'FILL' 0" }}
+          >
+            videocam_off
+          </span>
+          <p className="max-w-[16rem] text-sm">
+            Can&apos;t play this video in your browser — unsupported format (likely
+            HEVC/H.265). Try another browser or view it on the platform.
+          </p>
+          {sourceUrl ? (
+            <a
+              href={sourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs text-primary transition-colors hover:border-primary/40"
+            >
+              <span className="material-symbols-outlined text-sm">open_in_new</span>
+              View on platform
+            </a>
+          ) : null}
         </div>
       ) : null}
 

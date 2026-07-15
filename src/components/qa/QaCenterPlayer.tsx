@@ -66,6 +66,16 @@ export default function QaCenterPlayer({
     durationRef.current = duration
   }, [duration])
   const [playing, setPlaying] = useState(false)
+  // True when the browser loads the file but can't decode its video track (e.g. HEVC
+  // on a machine without HEVC support) — surface a message instead of a black frame.
+  const [videoUnsupported, setVideoUnsupported] = useState(false)
+  // Reset synchronously during render the instant the clip changes, so the new video
+  // element never carries the previous clip's unsupported state.
+  const [unsupportedForKey, setUnsupportedForKey] = useState(clipKey)
+  if (unsupportedForKey !== clipKey) {
+    setUnsupportedForKey(clipKey)
+    setVideoUnsupported(false)
+  }
 
   useEffect(() => {
     const el = frameRef.current
@@ -116,6 +126,9 @@ export default function QaCenterPlayer({
     const d = v.duration
     onVideoMeta(v.videoWidth || null, v.videoHeight || null, Number.isFinite(d) ? d : null)
     setDuration(Number.isFinite(d) ? d : 0)
+    // 0×0 dimensions after metadata → undecodable video track (e.g. HEVC on an
+    // unsupported machine); audio may still play, so surface a message.
+    if (v.videoWidth === 0 && v.videoHeight === 0) setVideoUnsupported(true)
   }, [videoRef, onVideoMeta])
 
   const onPlay = useCallback(() => setPlaying(true), [])
@@ -204,6 +217,7 @@ export default function QaCenterPlayer({
           muted={muted}
           onTimeUpdate={onTimeUpdate}
           onLoadedMetadata={onLoadedMeta}
+          onError={() => setVideoUnsupported(true)}
           onPlay={onPlay}
           onPause={onPause}
           onEnded={onPause}
@@ -213,6 +227,21 @@ export default function QaCenterPlayer({
           No composed video URL
         </div>
       )}
+
+      {videoUrl && videoUnsupported ? (
+        <div className="absolute inset-0 z-[19] flex flex-col items-center justify-center gap-3 bg-surface-container-lowest/95 p-6 text-center text-on-surface-variant">
+          <span
+            className="material-symbols-outlined text-3xl opacity-40"
+            style={{ fontVariationSettings: "'FILL' 0" }}
+          >
+            videocam_off
+          </span>
+          <p className="max-w-[16rem] text-sm">
+            Can&apos;t play this video in your browser — unsupported format (likely
+            HEVC/H.265). Try another browser.
+          </p>
+        </div>
+      ) : null}
 
       {videoUrl && muted ? (
         <button

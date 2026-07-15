@@ -38,6 +38,13 @@ function VideoThumbnail({ src, reelId }: { src: string; reelId: string }) {
           playsInline
           preload="metadata"
           onError={() => setErrored(true)}
+          onLoadedMetadata={(e) => {
+            // Undecodable video track (e.g. HEVC on an unsupported PC) loads metadata
+            // with 0×0 dimensions without firing onError — treat it as failed so the
+            // placeholder shows instead of a black thumbnail.
+            const v = e.currentTarget
+            if (v.videoWidth === 0 && v.videoHeight === 0) setErrored(true)
+          }}
         />
       )}
     </div>
