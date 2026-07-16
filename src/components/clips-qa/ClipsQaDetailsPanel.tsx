@@ -35,6 +35,22 @@ function platformLabel(p: string | null): string {
   return PLATFORM_LABELS[p.toLowerCase()] ?? p
 }
 
+/** Human label + text color for a reel's raw status value. */
+function statusDisplay(status: string | null): { label: string; className: string } {
+  switch ((status ?? '').toLowerCase()) {
+    case 'validated':
+      return { label: 'Validated', className: 'text-secondary' }
+    case 'approved':
+      return { label: 'Approved', className: 'text-secondary' }
+    case 'rejected':
+      return { label: 'Rejected', className: 'text-error' }
+    case '':
+      return { label: '—', className: 'text-on-surface' }
+    default:
+      return { label: status as string, className: 'text-on-surface' }
+  }
+}
+
 export default function ClipsQaDetailsPanel({ reel, durationSec }: Props) {
   const durationDisplay =
     durationSec != null && Number.isFinite(durationSec) ? `${Math.round(durationSec)}s` : '—'
@@ -131,7 +147,9 @@ export default function ClipsQaDetailsPanel({ reel, durationSec }: Props) {
               </div>
               <div className="flex flex-col">
                 <span className="text-xs text-on-surface-variant/60">Status</span>
-                <span className="font-semibold text-secondary">Validated</span>
+                <span className={`font-semibold ${statusDisplay(reel?.status ?? null).className}`}>
+                  {statusDisplay(reel?.status ?? null).label}
+                </span>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">

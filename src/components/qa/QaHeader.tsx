@@ -4,6 +4,11 @@ const DAILY_APPROVAL_TARGET = 60
 
 type Props = {
   pendingCount: number
+  /**
+   * Count shown in the top-right "Pending / Queue" badge. Always the validated
+   * "In Queue" total. Falls back to pendingCount when not provided.
+   */
+  queueCount?: number
   /** 1-based index of the clip currently shown (mobile swipe position). */
   clipIndex?: number | null
   onQueueToggle: () => void
@@ -16,6 +21,7 @@ type Props = {
 
 export default function QaHeader({
   pendingCount,
+  queueCount,
   clipIndex,
   onQueueToggle,
   selectedGame,
@@ -23,6 +29,7 @@ export default function QaHeader({
   onGameChange,
   approvedToday = 0,
 }: Props) {
+  const queueDisplayCount = queueCount ?? pendingCount
   const clipPositionLabel =
     clipIndex != null && pendingCount > 0 ? `${clipIndex}/${pendingCount}` : String(pendingCount)
   const leftToApprove = Math.max(DAILY_APPROVAL_TARGET - approvedToday, 0)
@@ -68,7 +75,7 @@ export default function QaHeader({
           </div>
         ) : null}
         <div className="hidden flex-col items-end text-right text-xs font-label uppercase tracking-widest text-on-surface-variant lg:flex">
-          <span className="font-bold text-secondary">{pendingCount} Pending</span>
+          <span className="font-bold text-secondary">{queueDisplayCount} Pending</span>
           <span className="text-on-surface-variant/60">Queue</span>
         </div>
         <div

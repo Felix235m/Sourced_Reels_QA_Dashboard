@@ -83,6 +83,8 @@ type Props = {
   selectedGame: string | null
   availableGames: string[]
   onGameChange: (game: string | null) => void
+  /** Noun after the count in the list header, e.g. "Remaining" or "Total". */
+  countNoun?: string
 }
 
 function SidebarContent({
@@ -94,8 +96,10 @@ function SidebarContent({
   selectedGame,
   availableGames,
   onGameChange,
+  countNoun = 'Remaining',
 }: Omit<Props, 'drawerOpen' | 'onDrawerClose'>) {
   const listRef = useRef<HTMLDivElement>(null)
+  const [confirmingLogout, setConfirmingLogout] = useState(false)
 
   useEffect(() => {
     if (!selectedId || !listRef.current) return
@@ -117,7 +121,7 @@ function SidebarContent({
             <span className="font-headline font-bold text-primary">Queue</span>
           )}
           <span className="ml-auto shrink-0 rounded bg-surface-bright px-2 py-0.5 text-[10px] text-on-surface-variant">
-            {loading ? '…' : `${reels.length} Remaining`}
+            {loading ? '…' : `${reels.length} ${countNoun}`}
           </span>
         </div>
       </div>
@@ -203,14 +207,36 @@ function SidebarContent({
       </div>
 
       <footer className="shrink-0 space-y-1 border-t border-white/5 p-4">
-        <button
-          type="button"
-          onClick={onLogout}
-          className="flex w-full items-center gap-3 rounded px-3 py-2 text-left text-on-surface-variant transition-colors hover:bg-white/5"
-        >
-          <span className="material-symbols-outlined text-sm">logout</span>
-          Logout
-        </button>
+        {confirmingLogout ? (
+          <div className="space-y-2">
+            <p className="px-1 text-xs text-on-surface-variant">Log out of QA Mode?</p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmingLogout(false)}
+                className="flex-1 cursor-pointer rounded px-3 py-2 text-center text-on-surface-variant transition-colors hover:bg-white/5"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={onLogout}
+                className="flex-1 cursor-pointer rounded bg-error/15 px-3 py-2 text-center font-semibold text-error transition-colors hover:bg-error/25"
+              >
+                Log out
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setConfirmingLogout(true)}
+            className="flex w-full cursor-pointer items-center gap-3 rounded px-3 py-2 text-left text-on-surface-variant transition-colors hover:bg-white/5"
+          >
+            <span className="material-symbols-outlined text-sm">logout</span>
+            Logout
+          </button>
+        )}
       </footer>
     </>
   )
@@ -227,6 +253,7 @@ export default function ClipsQaQueueSidebar({
   selectedGame,
   availableGames,
   onGameChange,
+  countNoun,
 }: Props) {
   const handleDrawerSelect = (id: string) => {
     onSelect(id)
@@ -242,7 +269,7 @@ export default function ClipsQaQueueSidebar({
     return () => window.removeEventListener('keydown', onKey)
   }, [drawerOpen, onDrawerClose])
 
-  const sharedProps = { reels, selectedId, onLogout, loading, selectedGame, availableGames, onGameChange }
+  const sharedProps = { reels, selectedId, onLogout, loading, selectedGame, availableGames, onGameChange, countNoun }
 
   return (
     <>

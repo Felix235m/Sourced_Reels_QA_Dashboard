@@ -16,6 +16,8 @@ import {
   fetchReelGames,
   submitReelDecision,
   getApprovedTodayCount,
+  getInQueueCount,
+  type ReelView,
 } from '@services/reelService'
 import type { Reel } from '@/types/reel'
 import type { QaTeamUser } from '@/types/team'
@@ -49,35 +51,46 @@ export default function ClipsQaDashboard() {
   const [selectedGame, setSelectedGame] = useState<string | null>(null)
   const [availableGames, setAvailableGames] = useState<string[]>([])
   const [approvedToday, setApprovedToday] = useState(0)
+  // Count of validated ("In Queue") reels for the selected game. Used only while
+  // the Rejected view is active, where reels holds rejected clips instead.
+  const [inQueueCount, setInQueueCount] = useState(0)
+  // Supervisor (read-only qa) can switch between the live validated queue and
+  // reels rejected in the last 48h. Reviewers always see the validated queue.
+  const [view, setView] = useState<ReelView>('validated')
   const isMobileLayout = useMobileLayout()
 
   const loadQueue = useCallback(
-    async (game: string | null = null, allAccessOverride = allAccess) => {
+    async (
+      game: string | null = null,
+      allAccessOverride = allAccess,
+      viewOverride: ReelView = view,
+    ) => {
       setLoading(true)
       setError(null)
+      // Clear the current queue immediately so the previous view's reels never
+      // linger on screen while the new query is in flight.
+      setReels([])
+      setSelectedId(null)
       try {
-        const rows = await fetchReelsQueue(game, allAccessOverride)
+        const rows = await fetchReelsQueue(game, allAccessOverride, viewOverride)
         setReels(rows)
-        setSelectedId((prev) => {
-          if (prev && rows.some((r) => r.reel_id === prev)) return prev
-          return rows[0]?.reel_id ?? null
-        })
+        setSelectedId(rows[0]?.reel_id ?? null)
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to load queue')
       } finally {
         setLoading(false)
       }
     },
-    [allAccess],
+    [allAccess, view],
   )
 
   useEffect(() => {
     if (!teamRow) return
-    void fetchReelGames(allAccess).then((games) => {
+    void fetchReelGames(allAccess, view).then((games) => {
       setAvailableGames(games)
       const defaultGame = games[0] ?? null
       setSelectedGame(defaultGame)
-      void loadQueue(defaultGame, allAccess)
+      void loadQueue(defaultGame, allAccess, view)
       if (defaultGame) {
         void getApprovedTodayCount(defaultGame, allAccess)
           .then(setApprovedToday)
@@ -96,8 +109,50 @@ export default function ClipsQaDashboard() {
       } else {
         setApprovedToday(0)
       }
+      // The top-right "In Queue" count always reflects validated clips, so keep it
+      // fresh even while the Rejected view is showing rejected reels.
+      if (view === 'rejected') {
+        void getInQueueCount(game, allAccess).then(setInQueueCount).catch(() => {})
+      }
     },
-    [loadQueue, allAccess],
+    [loadQueue, allAccess, view],
+  )
+
+  const handleViewChange = useCallback(
+    (nextView: ReelView) => {
+      if (nextView === view) return
+      // Switch the toggle and blank the queue synchronously so the old view's
+      // reels can't stay on screen during the async reload.
+      setView(nextView)
+      setReels([])
+      setSelectedId(null)
+      setLoading(true)
+      setError(null)
+      void (async () => {
+        try {
+          const games = await fetchReelGames(allAccess, nextView)
+          setAvailableGames(games)
+          const nextGame =
+            selectedGame && games.includes(selectedGame) ? selectedGame : games[0] ?? null
+          setSelectedGame(nextGame)
+          await loadQueue(nextGame, allAccess, nextView)
+          if (nextGame) {
+            void getApprovedTodayCount(nextGame, allAccess).then(setApprovedToday).catch(() => {})
+          } else {
+            setApprovedToday(0)
+          }
+          // Snapshot the validated "In Queue" total so the top-right count keeps
+          // showing validated clips while the Rejected view is active.
+          if (nextView === 'rejected') {
+            void getInQueueCount(nextGame, allAccess).then(setInQueueCount).catch(() => {})
+          }
+        } catch (e) {
+          setError(e instanceof Error ? e.message : 'Failed to load reels')
+          setLoading(false)
+        }
+      })()
+    },
+    [view, allAccess, selectedGame, loadQueue],
   )
 
   useEffect(() => {
@@ -262,11 +317,16 @@ export default function ClipsQaDashboard() {
   }, [signOut])
 
   const decisionDisabled = !selectedReel || actionBusy
+  // Top-right counter always reflects the validated "In Queue" clips. In the
+  // validated view that's the live queue length; in the rejected view it's the
+  // separately-fetched validated count.
+  const queueCount = view === 'validated' ? reels.length : inQueueCount
 
   return (
     <div className="full-viewport flex flex-col overflow-hidden bg-background text-on-surface">
       <QaHeader
         pendingCount={reels.length}
+        queueCount={queueCount}
         clipIndex={selectedReelIndex >= 0 ? selectedReelIndex + 1 : null}
         onQueueToggle={() => setQueueDrawerOpen((o) => !o)}
         selectedGame={selectedGame}
@@ -274,6 +334,28 @@ export default function ClipsQaDashboard() {
         onGameChange={handleGameChange}
         approvedToday={approvedToday}
       />
+
+      {readOnly ? (
+        <div className="flex shrink-0 justify-center border-b border-white/10 bg-surface/60 px-4 py-2">
+          <div className="inline-flex items-stretch rounded-lg border border-white/10 bg-surface-container p-0.5">
+            {(['validated', 'rejected'] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => handleViewChange(v)}
+                aria-pressed={view === v}
+                className={`cursor-pointer rounded-md px-5 py-1.5 text-center text-xs font-bold uppercase tracking-widest transition ${
+                  view === v
+                    ? 'bg-primary/20 text-primary'
+                    : 'text-on-surface-variant hover:text-on-surface'
+                }`}
+              >
+                {v === 'validated' ? 'In Queue' : 'Rejected · 48h'}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {error ? (
         <div
@@ -296,6 +378,7 @@ export default function ClipsQaDashboard() {
           selectedGame={selectedGame}
           availableGames={availableGames}
           onGameChange={handleGameChange}
+          countNoun={view === 'rejected' ? 'Total' : 'Remaining'}
         />
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
