@@ -14,6 +14,7 @@ import type { ClipSwipePreview } from '@hooks/useClipSwipeNavigation'
 import {
   fetchReelsQueue,
   fetchReelGames,
+  fetchMostRecentlyReviewedGame,
   submitReelDecision,
   getApprovedTodayCount,
   getInQueueCount,
@@ -86,9 +87,12 @@ export default function ClipsQaDashboard() {
 
   useEffect(() => {
     if (!teamRow) return
-    void fetchReelGames(allAccess, view).then((games) => {
+    void fetchReelGames(allAccess, view).then(async (games) => {
       setAvailableGames(games)
-      const defaultGame = games[0] ?? null
+      // If every game's pending queue is clear, fall back to whichever game was
+      // most recently reviewed today so the daily-target badge keeps showing
+      // real progress instead of resetting (no pending games left to default to).
+      const defaultGame = games[0] ?? (await fetchMostRecentlyReviewedGame(allAccess).catch(() => null))
       setSelectedGame(defaultGame)
       void loadQueue(defaultGame, allAccess, view)
       if (defaultGame) {
@@ -133,7 +137,9 @@ export default function ClipsQaDashboard() {
           const games = await fetchReelGames(allAccess, nextView)
           setAvailableGames(games)
           const nextGame =
-            selectedGame && games.includes(selectedGame) ? selectedGame : games[0] ?? null
+            selectedGame && games.includes(selectedGame)
+              ? selectedGame
+              : games[0] ?? (await fetchMostRecentlyReviewedGame(allAccess).catch(() => null))
           setSelectedGame(nextGame)
           await loadQueue(nextGame, allAccess, nextView)
           if (nextGame) {

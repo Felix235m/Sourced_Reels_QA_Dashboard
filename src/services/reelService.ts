@@ -24,6 +24,44 @@ const REEL_SELECT = [
   'supabase_file_url',
 ].join(',')
 
+/** IANA zone for CET/CEST — used to define the QA team's business "day" for daily targets. */
+const BUSINESS_TIME_ZONE = 'Europe/Berlin'
+
+/** ISO UTC instant corresponding to local midnight in `timeZone` for the given reference instant. */
+function startOfDayIso(timeZone: string, reference: Date): string {
+  const dateParts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(reference)
+  const dateField = (type: string) => Number(dateParts.find((p) => p.type === type)?.value)
+  const naiveUtcMidnight = Date.UTC(dateField('year'), dateField('month') - 1, dateField('day'))
+
+  const clockParts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(reference)
+  const clockField = (type: string) => Number(clockParts.find((p) => p.type === type)?.value)
+  const asUtc = Date.UTC(
+    clockField('year'),
+    clockField('month') - 1,
+    clockField('day'),
+    clockField('hour'),
+    clockField('minute'),
+    clockField('second'),
+  )
+  const offsetMinutes = (asUtc - reference.getTime()) / 60000
+
+  return new Date(naiveUtcMidnight - offsetMinutes * 60000).toISOString()
+}
+
 async function getUser() {
   const supabase = requireSupabase()
   const {
@@ -82,23 +120,20 @@ export async function fetchReelsQueue(
   return view === 'rejected' ? rows.filter((r) => r.supabase_file_url) : rows
 }
 
-/** Count of reels approved so far today (UTC calendar day), scoped to a game. */
+/** Count of reels approved so far today (CET/CEST business day), scoped to a game. */
 export async function getApprovedTodayCount(
   game: string,
   allAccess = false,
 ): Promise<number> {
   const { supabase, user } = await getUser()
-  const now = new Date()
-  const startOfDayUtc = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-  ).toISOString()
+  const startOfDay = startOfDayIso(BUSINESS_TIME_ZONE, new Date())
 
   let query = supabase
     .from('reels')
     .select('reel_id', { count: 'exact', head: true })
     .eq('game', game)
     .eq('is_approved', true)
-    .gte('reviewed_at', startOfDayUtc)
+    .gte('reviewed_at', startOfDay)
   if (!allAccess) query = query.eq('assigned_to', user.id)
 
   const { count, error } = await query
@@ -146,6 +181,30 @@ export async function fetchReelGames(
   const { data, error } = await query
   if (error) throw new Error(error.message)
   return Array.from(new Set((data ?? []).map((r) => r.game as string))).sort()
+}
+
+/**
+ * Game the caller most recently reviewed today (CET/CEST business day), or null
+ * if nothing has been reviewed today. Used as a fallback so the daily-target
+ * badge still reflects real progress once a game's pending queue is fully cleared
+ * (at which point it drops out of `fetchReelGames`'s validated-only result).
+ */
+export async function fetchMostRecentlyReviewedGame(allAccess = false): Promise<string | null> {
+  const { supabase, user } = await getUser()
+  const startOfDay = startOfDayIso(BUSINESS_TIME_ZONE, new Date())
+
+  let query = supabase
+    .from('reels')
+    .select('game')
+    .not('game', 'is', null)
+    .gte('reviewed_at', startOfDay)
+    .order('reviewed_at', { ascending: false })
+    .limit(1)
+  if (!allAccess) query = query.eq('assigned_to', user.id)
+
+  const { data, error } = await query.maybeSingle()
+  if (error) throw new Error(error.message)
+  return (data?.game as string | undefined) ?? null
 }
 
 /**
