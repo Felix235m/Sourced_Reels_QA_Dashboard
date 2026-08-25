@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Reel } from '@/types/reel'
+import { releaseVideo } from '@/lib/releaseVideo'
 import GameFilterDropdown from '@components/qa/GameFilterDropdown'
 import { useInView } from '@hooks/useInView'
 
@@ -18,34 +19,59 @@ function ThumbnailPlaceholder({ reelId }: { reelId: string }) {
 }
 
 /**
- * Mounts the native <video> only once the row is scrolled near the viewport.
- * With a large all-access queue, mounting every row's video up front would fire
- * hundreds of concurrent metadata requests that compete with the main player.
+ * Mounts the native <video> only while the row is scrolled near the viewport, and tears
+ * its decoder down the moment it scrolls away.
+ *
+ * Every `<video>` holds a decoder instance, and on Android those come from a small pool
+ * shared across the whole device — so the live count has to stay bounded by the viewport,
+ * not grow with the queue length. Previously these latched on and were never released,
+ * which let a long scroll through the queue exhaust the pool and take the browser (and
+ * the phone) down with it.
+ *
+ * `errored` is owned by the parent because rows now remount as they re-enter view, and
+ * local state would re-probe a URL already known to be undecodable every single time.
  */
-function VideoThumbnail({ src, reelId }: { src: string; reelId: string }) {
-  const [errored, setErrored] = useState(false)
+function VideoThumbnail({
+  src,
+  reelId,
+  errored,
+  onErrored,
+}: {
+  src: string
+  reelId: string
+  errored: boolean
+  onErrored: (reelId: string) => void
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null)
   const [wrapperRef, inView] = useInView<HTMLDivElement>()
+  const showVideo = inView && !errored
+
+  useEffect(() => {
+    const v = videoRef.current
+    return () => releaseVideo(v)
+  }, [showVideo])
 
   return (
     <div ref={wrapperRef} className="h-full w-full">
-      {errored || !inView ? (
-        <ThumbnailPlaceholder reelId={reelId} />
-      ) : (
+      {showVideo ? (
         <video
+          ref={videoRef}
           src={src}
           className="h-full w-full object-cover opacity-90"
           muted
           playsInline
           preload="metadata"
-          onError={() => setErrored(true)}
+          onError={() => onErrored(reelId)}
           onLoadedMetadata={(e) => {
             // Undecodable video track (e.g. HEVC on an unsupported PC) loads metadata
             // with 0×0 dimensions without firing onError — treat it as failed so the
             // placeholder shows instead of a black thumbnail.
             const v = e.currentTarget
-            if (v.videoWidth === 0 && v.videoHeight === 0) setErrored(true)
+            if (v.videoWidth === 0 && v.videoHeight === 0) onErrored(reelId)
           }}
         />
+      ) : (
+        <ThumbnailPlaceholder reelId={reelId} />
       )}
     </div>
   )
@@ -85,6 +111,11 @@ type Props = {
   onGameChange: (game: string | null) => void
   /** Noun after the count in the list header, e.g. "Remaining" or "Total". */
   countNoun?: string
+  /**
+   * True size of the queue on the server. `reels` only holds the first page, so this is
+   * what the header badge shows.
+   */
+  totalCount: number
 }
 
 function SidebarContent({
@@ -97,9 +128,16 @@ function SidebarContent({
   availableGames,
   onGameChange,
   countNoun = 'Remaining',
+  totalCount,
 }: Omit<Props, 'drawerOpen' | 'onDrawerClose'>) {
   const listRef = useRef<HTMLDivElement>(null)
   const [confirmingLogout, setConfirmingLogout] = useState(false)
+  // Reel ids whose thumbnail failed to decode. Held here rather than per-row so the
+  // result survives rows unmounting and remounting as they scroll in and out of view.
+  const [erroredIds, setErroredIds] = useState<ReadonlySet<string>>(() => new Set())
+  const markErrored = useCallback((reelId: string) => {
+    setErroredIds((prev) => (prev.has(reelId) ? prev : new Set(prev).add(reelId)))
+  }, [])
 
   useEffect(() => {
     if (!selectedId || !listRef.current) return
@@ -121,7 +159,7 @@ function SidebarContent({
             <span className="font-headline font-bold text-primary">Queue</span>
           )}
           <span className="ml-auto shrink-0 rounded bg-surface-bright px-2 py-0.5 text-[10px] text-on-surface-variant">
-            {loading ? '…' : `${reels.length} ${countNoun}`}
+            {loading ? '…' : `${totalCount} ${countNoun}`}
           </span>
         </div>
       </div>
@@ -152,7 +190,12 @@ function SidebarContent({
               >
                 <div className="relative h-28 w-20 shrink-0 overflow-hidden rounded-md bg-surface-container-highest">
                   {reel.supabase_file_url ? (
-                    <VideoThumbnail src={reel.supabase_file_url} reelId={reel.reel_id} />
+                    <VideoThumbnail
+                      src={reel.supabase_file_url}
+                      reelId={reel.reel_id}
+                      errored={erroredIds.has(reel.reel_id)}
+                      onErrored={markErrored}
+                    />
                   ) : (
                     <ThumbnailPlaceholder reelId={reel.reel_id} />
                   )}
@@ -254,6 +297,7 @@ export default function ClipsQaQueueSidebar({
   availableGames,
   onGameChange,
   countNoun,
+  totalCount,
 }: Props) {
   const handleDrawerSelect = (id: string) => {
     onSelect(id)
@@ -269,7 +313,7 @@ export default function ClipsQaQueueSidebar({
     return () => window.removeEventListener('keydown', onKey)
   }, [drawerOpen, onDrawerClose])
 
-  const sharedProps = { reels, selectedId, onLogout, loading, selectedGame, availableGames, onGameChange, countNoun }
+  const sharedProps = { reels, selectedId, onLogout, loading, selectedGame, availableGames, onGameChange, countNoun, totalCount }
 
   return (
     <>

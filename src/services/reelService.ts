@@ -78,6 +78,14 @@ export type ReelView = 'validated' | 'rejected'
 /** How far back the rejected view looks (by reviewed_at). */
 const REJECTED_WINDOW_MS = 48 * 60 * 60 * 1000
 
+/**
+ * Max reels loaded into the sidebar at once. Reviewers work the queue top-down FIFO and
+ * effectively never reach the end of a page, while an uncapped all-access queue pulls up
+ * to PostgREST's ~1000-row limit — a payload and a DOM list that a phone struggles with.
+ * The true queue size comes from `getInQueueCount` instead of the loaded row count.
+ */
+export const QUEUE_PAGE_SIZE = 250
+
 /** ISO timestamp cutoff for the rejected view (now - 48h). */
 function rejectedCutoffIso(): string {
   return new Date(Date.now() - REJECTED_WINDOW_MS).toISOString()
@@ -88,6 +96,8 @@ function rejectedCutoffIso(): string {
  * - view 'validated' → the live validated queue (default).
  * - view 'rejected'  → reels rejected in the last 48h (supervisor/qa role only).
  * For the all-access qa role, results span all reviewers; otherwise just the caller's.
+ *
+ * Capped at `QUEUE_PAGE_SIZE` rows — use `getInQueueCount` for the true queue size.
  */
 export async function fetchReelsQueue(
   game?: string | null,
@@ -112,6 +122,7 @@ export async function fetchReelsQueue(
   }
   if (!allAccess) query = query.eq('assigned_to', user.id)
   if (game) query = query.eq('game', game)
+  query = query.limit(QUEUE_PAGE_SIZE)
 
   const { data, error } = await query
   if (error) throw new Error(error.message)
@@ -142,19 +153,28 @@ export async function getApprovedTodayCount(
 }
 
 /**
- * Count of validated reels (the live "in queue" total) visible to the caller,
- * optionally scoped to a game. Always counts the validated queue regardless of
- * which view the UI is showing.
+ * Total reels matching a view, visible to the caller and optionally scoped to a game.
+ *
+ * `fetchReelsQueue` only returns the first `QUEUE_PAGE_SIZE` rows, so this — not the
+ * loaded row count — is what the UI must display as the queue size. Defaults to the
+ * validated queue, which is what the header's "In Queue" badge always shows regardless
+ * of which view is active.
  */
 export async function getInQueueCount(
   game: string | null,
   allAccess = false,
+  view: ReelView = 'validated',
 ): Promise<number> {
   const { supabase, user } = await getUser()
-  let query = supabase
-    .from('reels')
-    .select('reel_id', { count: 'exact', head: true })
-    .eq('status', 'validated')
+  let query = supabase.from('reels').select('reel_id', { count: 'exact', head: true })
+  if (view === 'rejected') {
+    query = query
+      .eq('status', 'rejected')
+      .gte('reviewed_at', rejectedCutoffIso())
+      .not('supabase_file_url', 'is', null)
+  } else {
+    query = query.eq('status', 'validated')
+  }
   if (!allAccess) query = query.eq('assigned_to', user.id)
   if (game) query = query.eq('game', game)
 

@@ -52,9 +52,12 @@ export default function ClipsQaDashboard() {
   const [selectedGame, setSelectedGame] = useState<string | null>(null)
   const [availableGames, setAvailableGames] = useState<string[]>([])
   const [approvedToday, setApprovedToday] = useState(0)
-  // Count of validated ("In Queue") reels for the selected game. Used only while
-  // the Rejected view is active, where reels holds rejected clips instead.
+  // Count of validated ("In Queue") reels for the selected game. Always the validated
+  // total, even while the Rejected view is showing rejected clips.
   const [inQueueCount, setInQueueCount] = useState(0)
+  // Total reels in the *current* view on the server. `reels` only holds the first
+  // QUEUE_PAGE_SIZE rows, so counts must come from here, not from reels.length.
+  const [queueTotal, setQueueTotal] = useState(0)
   // Supervisor (read-only qa) can switch between the live validated queue and
   // reels rejected in the last 48h. Reviewers always see the validated queue.
   const [view, setView] = useState<ReelView>('validated')
@@ -80,6 +83,21 @@ export default function ClipsQaDashboard() {
         setError(e instanceof Error ? e.message : 'Failed to load queue')
       } finally {
         setLoading(false)
+      }
+      // Counts come from the server because the query above is capped at one page.
+      // Non-blocking: a failed count leaves the previous number rather than the queue.
+      void getInQueueCount(game, allAccessOverride, viewOverride)
+        .then((n) => {
+          setQueueTotal(n)
+          // In the validated view the current view *is* the in-queue total.
+          if (viewOverride === 'validated') setInQueueCount(n)
+        })
+        .catch(() => {})
+      if (viewOverride === 'rejected') {
+        // The header badge always reports the validated queue, which this view isn't.
+        void getInQueueCount(game, allAccessOverride, 'validated')
+          .then(setInQueueCount)
+          .catch(() => {})
       }
     },
     [allAccess, view],
@@ -113,13 +131,9 @@ export default function ClipsQaDashboard() {
       } else {
         setApprovedToday(0)
       }
-      // The top-right "In Queue" count always reflects validated clips, so keep it
-      // fresh even while the Rejected view is showing rejected reels.
-      if (view === 'rejected') {
-        void getInQueueCount(game, allAccess).then(setInQueueCount).catch(() => {})
-      }
+      // Queue totals are refreshed by loadQueue.
     },
-    [loadQueue, allAccess, view],
+    [loadQueue, allAccess],
   )
 
   const handleViewChange = useCallback(
@@ -147,11 +161,8 @@ export default function ClipsQaDashboard() {
           } else {
             setApprovedToday(0)
           }
-          // Snapshot the validated "In Queue" total so the top-right count keeps
-          // showing validated clips while the Rejected view is active.
-          if (nextView === 'rejected') {
-            void getInQueueCount(nextGame, allAccess).then(setInQueueCount).catch(() => {})
-          }
+          // Queue totals (including the validated "In Queue" snapshot that the header
+          // keeps showing while the Rejected view is active) are refreshed by loadQueue.
         } catch (e) {
           setError(e instanceof Error ? e.message : 'Failed to load reels')
           setLoading(false)
@@ -250,6 +261,9 @@ export default function ClipsQaDashboard() {
       setReels(rest)
       setSelectedId(nextId)
       setApprovedToday((n) => n + 1)
+      // Keep the server-sourced totals honest between reloads.
+      setQueueTotal((n) => Math.max(0, n - 1))
+      setInQueueCount((n) => Math.max(0, n - 1))
     } catch (e) {
       setActionError(e instanceof Error ? e.message : 'Approve failed')
     } finally {
@@ -269,6 +283,9 @@ export default function ClipsQaDashboard() {
       const nextId = rest[idx]?.reel_id ?? rest[idx - 1]?.reel_id ?? rest[0]?.reel_id ?? null
       setReels(rest)
       setSelectedId(nextId)
+      // Rejecting removes the reel from the validated queue too.
+      setQueueTotal((n) => Math.max(0, n - 1))
+      setInQueueCount((n) => Math.max(0, n - 1))
     } catch (e) {
       setActionError(e instanceof Error ? e.message : 'Reject failed')
     } finally {
@@ -323,15 +340,13 @@ export default function ClipsQaDashboard() {
   }, [signOut])
 
   const decisionDisabled = !selectedReel || actionBusy
-  // Top-right counter always reflects the validated "In Queue" clips. In the
-  // validated view that's the live queue length; in the rejected view it's the
-  // separately-fetched validated count.
-  const queueCount = view === 'validated' ? reels.length : inQueueCount
+  // Top-right counter always reflects the validated "In Queue" clips, in both views.
+  const queueCount = inQueueCount
 
   return (
     <div className="full-viewport flex flex-col overflow-hidden bg-background text-on-surface">
       <QaHeader
-        pendingCount={reels.length}
+        pendingCount={queueTotal}
         queueCount={queueCount}
         clipIndex={selectedReelIndex >= 0 ? selectedReelIndex + 1 : null}
         onQueueToggle={() => setQueueDrawerOpen((o) => !o)}
@@ -385,6 +400,7 @@ export default function ClipsQaDashboard() {
           availableGames={availableGames}
           onGameChange={handleGameChange}
           countNoun={view === 'rejected' ? 'Total' : 'Remaining'}
+          totalCount={queueTotal}
         />
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -406,7 +422,12 @@ export default function ClipsQaDashboard() {
             clipPositionLabel={clipPositionLabel}
           />
 
-          <VideoPreloader urls={[swipeAdjacent.next?.videoUrl, swipeAdjacent.prev?.videoUrl]} />
+          {/*
+            Desktop only, and next-clip only. When the mobile swipe stack is active its
+            peek panels already hold the adjacent clips, so this would load the same URLs
+            a second time — two extra decoders on the platform that can least afford them.
+          */}
+          {!clipSwipeEnabled ? <VideoPreloader urls={[swipeAdjacent.next?.videoUrl]} /> : null}
 
           {readOnly ? (
             <div className="shrink-0 border-t border-white/10 bg-[#0d0d18]/95 px-3 py-3 text-center text-xs font-label uppercase tracking-widest text-on-surface-variant">

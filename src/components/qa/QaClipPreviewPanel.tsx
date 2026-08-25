@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { releaseVideo } from '@/lib/releaseVideo'
 import type { ClipSwipePreview } from '@hooks/useClipSwipeNavigation'
 import {
   COMPOSE_H,
@@ -18,6 +19,12 @@ type Props = {
   direction: 'prev' | 'next'
   /** 0–1 how visible this peek should be during drag */
   peekOpacity?: number
+  /**
+   * Whether to actually mount the `<video>`. A peek panel is translated off-frame and
+   * invisible until a drag starts, so an inactive one shows the placeholder instead and
+   * holds no decoder.
+   */
+  active?: boolean
 }
 
 export default function QaClipPreviewPanel({
@@ -26,8 +33,29 @@ export default function QaClipPreviewPanel({
   frameWidth,
   direction,
   peekOpacity = 0.85,
+  active = true,
 }: Props) {
+  const videoRef = useRef<HTMLVideoElement>(null)
   const [errored, setErrored] = useState(false)
+  // Reset the error flag synchronously when the panel moves to a different clip —
+  // otherwise one clip that fails to load leaves this panel showing "broken_image" for
+  // every clip after it. Same state-compare-during-render idiom as the center player.
+  const [erroredForClip, setErroredForClip] = useState(clip?.id ?? null)
+  if (erroredForClip !== (clip?.id ?? null)) {
+    setErroredForClip(clip?.id ?? null)
+    setErrored(false)
+  }
+
+  const showVideo = Boolean(clip?.videoUrl) && !errored && active
+
+  // Release the decoder as soon as the video stops being rendered, not whenever GC gets
+  // around to it. Depending on `showVideo` means the cleanup closes over the element from
+  // the render that mounted it, which is the one we need to tear down.
+  useEffect(() => {
+    const v = videoRef.current
+    return () => releaseVideo(v)
+  }, [showVideo])
+
   const hookTrimmed = clip?.hookText?.replace(/\r\n|\r|\n/g, ' ').trim() ?? ''
   const scale = frameWidth > 0 ? frameWidth / COMPOSE_W : 0
   const hookFontPx =
@@ -39,8 +67,9 @@ export default function QaClipPreviewPanel({
       className="relative h-full w-full overflow-hidden bg-black"
       style={{ opacity: peekOpacity }}
     >
-      {clip?.videoUrl && !errored ? (
+      {showVideo && clip?.videoUrl ? (
         <video
+          ref={videoRef}
           src={clip.videoUrl}
           className="h-full w-full object-contain"
           muted

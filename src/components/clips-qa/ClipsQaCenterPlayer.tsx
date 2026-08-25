@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { releaseVideo } from '@/lib/releaseVideo'
 import QaClipPreviewPanel from '@components/qa/QaClipPreviewPanel'
 import {
   useClipSwipeNavigation,
@@ -91,15 +92,22 @@ export default function ClipsQaCenterPlayer({
     const tryPlay = () => {
       void v.play().catch(() => {})
     }
+    let onCanPlay: (() => void) | null = null
     if (v.readyState >= 2) {
       tryPlay()
     } else {
-      const onCanPlay = () => {
-        v.removeEventListener('canplay', onCanPlay)
+      onCanPlay = () => {
+        if (onCanPlay) v.removeEventListener('canplay', onCanPlay)
         tryPlay()
       }
       v.addEventListener('canplay', onCanPlay)
-      return () => v.removeEventListener('canplay', onCanPlay)
+    }
+    // The element is keyed by clipKey, so React discards it on every clip change. `v` is
+    // the outgoing element here — release its decoder now rather than leaving it pinned
+    // until GC, which on Android is what starves the next clip.
+    return () => {
+      if (onCanPlay) v.removeEventListener('canplay', onCanPlay)
+      releaseVideo(v)
     }
   }, [clipKey, videoUrl, videoRef])
 
@@ -407,6 +415,9 @@ export default function ClipsQaCenterPlayer({
                     frameWidth={0}
                     direction="prev"
                     peekOpacity={peekPanelOpacity}
+                    // Backwards navigation is rare, so this one only loads while a drag
+                    // is actually in flight — it costs a decoder the rest of the time.
+                    active={isDragging || isSnapping}
                   />
                 </div>
                 <div
